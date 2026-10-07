@@ -1,37 +1,80 @@
-"""Summary tables over tagged opinions."""
+"""Summary tables for the three research questions. Writes CSVs to reports/."""
+
+from __future__ import annotations
 
 from pathlib import Path
 
 import pandas as pd
 
-
-def _flags(df: pd.DataFrame, prefix: str, min_mentions: int) -> pd.DataFrame:
-    cols = [c for c in df.columns if c.startswith(prefix)]
-    return (df[cols] >= min_mentions).rename(columns=lambda c: c.removeprefix(prefix))
+from . import LABELS_PATH, REPORTS, TAGGED_PATH
+from .taxonomy import clause_columns, doctrine_columns
 
 
-def clause_frequency(df: pd.DataFrame, min_mentions: int = 2) -> pd.Series:
-    """Share of opinions mentioning each clause at least min_mentions times."""
-    return _flags(df, "clause_", min_mentions).mean().sort_values(ascending=False)
+def _strip(col: str) -> str:
+    return col.split("_", 1)[1]
 
 
-def clause_by_year(df: pd.DataFrame, min_mentions: int = 2) -> pd.DataFrame:
-    year = pd.to_datetime(df["date_filed"], errors="coerce").dt.year.rename("year")
-    return _flags(df, "clause_", min_mentions).groupby(year).sum().astype(int)
+def clause_frequency(df: pd.DataFrame) -> pd.DataFrame:
+    """RQ1: how many opinions mention each clause."""
+    counts = df[clause_columns()].sum().rename(_strip)
+    out = pd.DataFrame({"opinions": counts.astype(int),
+                        "share": (counts / len(df)).round(4)})
+    return out.sort_values("opinions", ascending=False).rename_axis("clause").reset_index()
 
 
-def clause_by_doctrine(df: pd.DataFrame, doctrine: str = "contra_proferentem",
-                       min_mentions: int = 2) -> pd.Series:
-    """Among opinions discussing each clause, share that also invoke the doctrine."""
-    clauses = _flags(df, "clause_", min_mentions)
-    doc = df[f"doctrine_{doctrine}"] >= 1
-    return pd.Series({c: doc[clauses[c]].mean() if clauses[c].any() else float("nan")
-                      for c in clauses.columns}).sort_values(ascending=False)
+def clause_by_year(df: pd.DataFrame) -> pd.DataFrame:
+    """RQ1 over time: opinions mentioning each clause, per filing year."""
+    years = pd.to_datetime(df["date_filed"], errors="coerce").dt.year
+    table = df[clause_columns()].groupby(years).sum().rename(columns=_strip)
+    table.insert(0, "total_opinions", df.groupby(years).size())
+    return table.rename_axis("year").reset_index()
 
 
-def write_reports(df: pd.DataFrame, out_dir: Path, min_mentions: int = 2) -> None:
+def doctrine_by_clause(df: pd.DataFrame) -> pd.DataFrame:
+    """RQ2: among opinions tagged with a clause, the share that also invoke each doctrine."""
+    rows = []
+    for c in clause_columns():
+        sub = df[df[c] == 1]
+        row = {"clause": _strip(c), "opinions": len(sub)}
+        for d in doctrine_columns():
+            row[_strip(d)] = round(float(sub[d].mean()), 4) if len(sub) else float("nan")
+        rows.append(row)
+    return pd.DataFrame(rows).sort_values("opinions", ascending=False)
+
+
+def clause_by_court(df: pd.DataFrame, min_opinions: int = 5) -> pd.DataFrame:
+    """RQ3: clause mention rates by court (courts with at least `min_opinions`)."""
+    sizes = df.groupby("court").size()
+    keep = sizes[sizes >= min_opinions].index
+    sub = df[df["court"].isin(keep)]
+    table = sub.groupby("court")[clause_columns()].mean().round(4).rename(columns=_strip)
+    table.insert(0, "opinions", sizes[keep])
+    return table.sort_values("opinions", ascending=False).reset_index()
+
+
+def outcomes_by_clause(labels: pd.DataFrame) -> pd.DataFrame:
+    """RQ2/RQ3 on hand labels: coverage outcome by primary clause."""
+    lab = labels[labels["coverage_outcome"].fillna("").astype(str).str.strip() != ""]
+    if lab.empty:
+        return pd.DataFrame()
+    return (pd.crosstab(lab["primary_clause"].fillna("(blank)"), lab["coverage_outcome"],
+                        margins=True, margins_name="total")
+            .rename_axis(index="primary_clause", columns=None).reset_index())
+
+
+def run(tagged_path: Path = TAGGED_PATH, labels_path: Path = LABELS_PATH,
+        out_dir: Path = REPORTS) -> dict[str, pd.DataFrame]:
+    df = pd.read_csv(tagged_path)
+    tables = {
+        "clause_frequency": clause_frequency(df),
+        "clause_by_year": clause_by_year(df),
+        "doctrine_by_clause": doctrine_by_clause(df),
+        "clause_by_court": clause_by_court(df),
+    }
+    if labels_path.exists():
+        tables["outcomes_by_clause"] = outcomes_by_clause(pd.read_csv(labels_path))
     out_dir.mkdir(parents=True, exist_ok=True)
-    clause_frequency(df, min_mentions).to_csv(out_dir / "clause_frequency.csv", header=["share"])
-    clause_by_year(df, min_mentions).to_csv(out_dir / "clause_by_year.csv")
-    clause_by_doctrine(df, min_mentions=min_mentions).to_csv(
-        out_dir / "clause_contra_proferentem.csv", header=["share"])
+    for name, table in tables.items():
+        if not table.empty:
+            table.to_csv(out_dir / f"{name}.csv", index=False)
+    return tables

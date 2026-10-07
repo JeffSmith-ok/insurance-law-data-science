@@ -1,42 +1,115 @@
-"""Compare the regex tagger with the hand-labeled sample (see CODEBOOK.md)."""
+"""Draw a blind labeling sample and compare the tagger with hand labels."""
+
+from __future__ import annotations
 
 from pathlib import Path
 
 import pandas as pd
 
-LABEL_FIELDS = ["coverage_outcome", "primary_clause", "notes"]
+from . import ID_COLS, LABELS_PATH, REPORTS, TAGGED_PATH
+from .taxonomy import tag_columns
+
+OUTCOME_COLS = ["coverage_outcome", "primary_clause", "notes", "labeler"]
+OUTCOMES = {"policyholder", "insurer", "mixed", "none"}
 
 
-def draw_sample(tagged: pd.DataFrame, n: int, out_path: Path, seed: int = 0) -> pd.DataFrame:
-    """Write a labeling sheet: tagger columns blanked so labeling is blind to them."""
-    sample = tagged.sample(n=min(n, len(tagged)), random_state=seed)
-    sheet = sample[["opinion_id", "case_name", "court", "date_filed", "url"]].copy()
-    for col in tagged.columns:
-        if col.startswith(("clause_", "doctrine_")):
-            sheet[col] = ""
-    for col in LABEL_FIELDS:
-        sheet[col] = ""
+def draw_sample(tagged_path: Path = TAGGED_PATH, out_path: Path = LABELS_PATH,
+                n: int = 150, seed: int = 42, force: bool = False) -> pd.DataFrame:
+    """Write a blank labeling sheet. Tagger predictions are NOT included, so labeling is blind."""
+    if out_path.exists() and not force:
+        raise FileExistsError(f"{out_path} exists; pass force=True (--force) to overwrite "
+                              "hand labels.")
+    tagged = pd.read_csv(tagged_path)
+    sample = tagged.sample(n=min(n, len(tagged)), random_state=seed)[ID_COLS].copy()
+    for col in tag_columns() + OUTCOME_COLS:
+        sample[col] = ""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    sheet.to_csv(out_path, index=False)
-    return sheet
+    sample.sort_values("opinion_id").to_csv(out_path, index=False)
+    return sample
 
 
-def score(tagged: pd.DataFrame, labels: pd.DataFrame, min_mentions: int = 1) -> pd.DataFrame:
-    """Precision/recall per variable, treating >= min_mentions as a positive prediction."""
-    labels = labels.dropna(subset=[c for c in labels.columns
-                                   if c.startswith(("clause_", "doctrine_"))], how="all")
-    merged = labels.merge(tagged, on="opinion_id", suffixes=("_true", "_pred"))
+def binary_metrics(pred: pd.Series, gold: pd.Series) -> dict:
+    pred, gold = pred.astype(int), gold.astype(int)
+    tp = int(((pred == 1) & (gold == 1)).sum())
+    fp = int(((pred == 1) & (gold == 0)).sum())
+    fn = int(((pred == 0) & (gold == 1)).sum())
+    tn = int(((pred == 0) & (gold == 0)).sum())
+    precision = tp / (tp + fp) if tp + fp else float("nan")
+    recall = tp / (tp + fn) if tp + fn else float("nan")
+    f1 = (2 * precision * recall / (precision + recall)
+          if tp and (precision + recall) else float("nan"))
+    return {"n": tp + fp + fn + tn, "support": tp + fn, "tp": tp, "fp": fp, "fn": fn,
+            "tn": tn, "precision": precision, "recall": recall, "f1": f1,
+            "kappa": cohen_kappa(pred, gold)}
+
+
+def cohen_kappa(a: pd.Series, b: pd.Series) -> float:
+    a, b = pd.Series(a).astype(str).reset_index(drop=True), pd.Series(b).astype(str).reset_index(drop=True)
+    n = len(a)
+    if n == 0:
+        return float("nan")
+    p_o = float((a == b).mean())
+    cats = set(a) | set(b)
+    p_e = sum(float((a == c).mean()) * float((b == c).mean()) for c in cats)
+    if p_e == 1:
+        return 1.0 if p_o == 1 else float("nan")
+    return (p_o - p_e) / (1 - p_e)
+
+
+def _clean_labels(labels: pd.DataFrame) -> pd.DataFrame:
+    labels = labels.copy()
+    for col in tag_columns():
+        if col in labels:
+            labels[col] = pd.to_numeric(labels[col], errors="coerce")
+            bad = labels[col].notna() & ~labels[col].isin([0, 1])
+            if bad.any():
+                raise ValueError(f"{col}: values must be 0 or 1 (rows {list(labels.index[bad])})")
+    if "coverage_outcome" in labels:
+        out = labels["coverage_outcome"].fillna("").astype(str).str.strip().str.lower()
+        bad = (out != "") & ~out.isin(OUTCOMES)
+        if bad.any():
+            raise ValueError(f"coverage_outcome must be one of {sorted(OUTCOMES)}: "
+                             f"{sorted(set(out[bad]))}")
+        labels["coverage_outcome"] = out
+    return labels
+
+
+def evaluate(tagged_path: Path = TAGGED_PATH, labels_path: Path = LABELS_PATH,
+             out_path: Path | None = REPORTS / "evaluation.csv") -> pd.DataFrame:
+    tagged = pd.read_csv(tagged_path)
+    labels = _clean_labels(pd.read_csv(labels_path))
+    merged = labels.merge(tagged, on="opinion_id", suffixes=("_gold", "_pred"))
     rows = []
-    for col in labels.columns:
-        if not col.startswith(("clause_", "doctrine_")) or f"{col}_pred" not in merged:
+    for col in tag_columns():
+        sub = merged[[f"{col}_gold", f"{col}_pred"]].dropna()
+        if sub.empty:
             continue
-        truth = merged[f"{col}_true"].fillna(0).astype(int) == 1
-        pred = merged[f"{col}_pred"] >= min_mentions
-        tp, fp, fn = (truth & pred).sum(), (~truth & pred).sum(), (truth & ~pred).sum()
-        rows.append({
-            "variable": col,
-            "support": int(truth.sum()),
-            "precision": tp / (tp + fp) if tp + fp else float("nan"),
-            "recall": tp / (tp + fn) if tp + fn else float("nan"),
-        })
-    return pd.DataFrame(rows)
+        rows.append({"variable": col, **binary_metrics(sub[f"{col}_pred"], sub[f"{col}_gold"])})
+    report = pd.DataFrame(rows)
+    if out_path is not None and not report.empty:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        report.to_csv(out_path, index=False)
+    return report
+
+
+def agreement(labels_a: Path, labels_b: Path,
+              out_path: Path | None = REPORTS / "agreement.csv") -> pd.DataFrame:
+    """Inter-rater agreement (Cohen's kappa) between two labelers on overlapping opinions."""
+    a = _clean_labels(pd.read_csv(labels_a))
+    b = _clean_labels(pd.read_csv(labels_b))
+    merged = a.merge(b, on="opinion_id", suffixes=("_a", "_b"))
+    rows = []
+    for col in tag_columns() + ["coverage_outcome", "primary_clause"]:
+        if f"{col}_a" not in merged:
+            continue
+        sub = merged[[f"{col}_a", f"{col}_b"]].replace("", pd.NA).dropna()
+        if sub.empty:
+            continue
+        rows.append({"variable": col, "n": len(sub),
+                     "pct_agree": float((sub[f"{col}_a"].astype(str) == sub[f"{col}_b"].astype(str)).mean()),
+                     "kappa": cohen_kappa(sub[f"{col}_a"], sub[f"{col}_b"])})
+    report = pd.DataFrame(rows)
+    if out_path is not None and not report.empty:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        report.to_csv(out_path, index=False)
+    return report

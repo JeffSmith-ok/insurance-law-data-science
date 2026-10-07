@@ -1,57 +1,83 @@
-"""Command-line entry point: clausemine <collect|tag|sample|evaluate|analyze>."""
+"""Command-line interface: clausemine {collect,tag,sample,evaluate,agreement,analyze}."""
+
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
 import pandas as pd
 
-RAW = Path("data/raw/opinions.jsonl")
-TAGGED = Path("data/processed/tagged.csv")
-LABELS = Path("data/labels/sample.csv")
-REPORTS = Path("reports")
+from . import LABELS_PATH, RAW_PATH, REPORTS, TAGGED_PATH
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="clausemine")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    p = argparse.ArgumentParser(prog="clausemine", description=__doc__)
+    sub = p.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("collect", help="download opinions from CourtListener")
-    p.add_argument("--query")
-    p.add_argument("--max", type=int, default=200)
-    p.add_argument("--courts", help="space-separated CourtListener court IDs")
-    p.add_argument("--filed-after", help="YYYY-MM-DD")
+    c = sub.add_parser("collect", help="search CourtListener and download opinion text")
+    c.add_argument("--query", required=True, help="CourtListener search query")
+    c.add_argument("--max", type=int, default=200, help="max opinions to fetch")
+    c.add_argument("--court", help="space-separated court IDs, e.g. 'cal ca9'")
+    c.add_argument("--filed-after", help="YYYY-MM-DD")
+    c.add_argument("--filed-before", help="YYYY-MM-DD")
+    c.add_argument("--out", type=Path, default=RAW_PATH)
 
-    sub.add_parser("tag", help="tag clauses and doctrines")
-    p = sub.add_parser("sample", help="draw a hand-labeling sample")
-    p.add_argument("--n", type=int, default=150)
-    sub.add_parser("evaluate", help="score the tagger against hand labels")
-    p = sub.add_parser("analyze", help="write summary tables to reports/")
-    p.add_argument("--min-mentions", type=int, default=2)
+    t = sub.add_parser("tag", help="apply the taxonomy to downloaded opinions")
+    t.add_argument("--min-hits", type=int, default=1,
+                   help="matches required to tag a key (raise to cut passing mentions)")
+    t.add_argument("--raw", type=Path, default=RAW_PATH)
+    t.add_argument("--out", type=Path, default=TAGGED_PATH)
 
-    args = parser.parse_args(argv)
+    s = sub.add_parser("sample", help="write a blank, blind labeling sheet")
+    s.add_argument("--n", type=int, default=150)
+    s.add_argument("--seed", type=int, default=42)
+    s.add_argument("--out", type=Path, default=LABELS_PATH)
+    s.add_argument("--force", action="store_true", help="overwrite an existing sheet")
+
+    e = sub.add_parser("evaluate", help="tagger precision/recall vs. hand labels")
+    e.add_argument("--labels", type=Path, default=LABELS_PATH)
+
+    a = sub.add_parser("agreement", help="Cohen's kappa between two labelers")
+    a.add_argument("labels_a", type=Path)
+    a.add_argument("labels_b", type=Path)
+
+    sub.add_parser("analyze", help="write summary tables to reports/")
+
+    args = p.parse_args(argv)
+    pd.set_option("display.width", 160)
+    pd.set_option("display.max_columns", 30)
 
     if args.cmd == "collect":
-        from .collect import DEFAULT_QUERY, collect
-        n = collect(RAW, query=args.query or DEFAULT_QUERY, max_opinions=args.max,
-                    courts=args.courts, filed_after=args.filed_after)
-        print(f"wrote {n} new opinions to {RAW}")
+        from .collect import run
+        query = args.query
+        if args.filed_after or args.filed_before:
+            lo, hi = args.filed_after or "*", args.filed_before or "*"
+            query = f"({query}) AND dateFiled:[{lo} TO {hi}]"
+        filters = {"court": args.court} if args.court else {}
+        n = run(query, max_results=args.max, out_path=args.out, **filters)
+        print(f"Wrote {n} new opinions to {args.out}")
     elif args.cmd == "tag":
-        from .tag import tag_file
-        df = tag_file(RAW, TAGGED)
-        print(f"tagged {len(df)} opinions -> {TAGGED}")
+        from .tag import run
+        df = run(args.raw, args.out, min_hits=args.min_hits)
+        print(f"Tagged {len(df)} opinions -> {args.out}")
     elif args.cmd == "sample":
         from .evaluate import draw_sample
-        sheet = draw_sample(pd.read_csv(TAGGED), args.n, LABELS)
-        print(f"wrote {len(sheet)}-row labeling sheet to {LABELS}")
+        df = draw_sample(TAGGED_PATH, args.out, n=args.n, seed=args.seed, force=args.force)
+        print(f"Wrote {len(df)} rows to {args.out}. Label blind, per CODEBOOK.md.")
     elif args.cmd == "evaluate":
-        from .evaluate import score
-        print(score(pd.read_csv(TAGGED), pd.read_csv(LABELS)).to_string(index=False))
+        from .evaluate import evaluate
+        report = evaluate(TAGGED_PATH, args.labels)
+        print(report.round(3).to_string(index=False) if not report.empty
+              else "No labeled rows found yet.")
+    elif args.cmd == "agreement":
+        from .evaluate import agreement
+        print(agreement(args.labels_a, args.labels_b).round(3).to_string(index=False))
     elif args.cmd == "analyze":
-        from .analyze import clause_frequency, write_reports
-        df = pd.read_csv(TAGGED)
-        write_reports(df, REPORTS, args.min_mentions)
-        print(clause_frequency(df, args.min_mentions).to_string())
-        print(f"\nreports written to {REPORTS}/")
+        from .analyze import run
+        for name, table in run().items():
+            print(f"\n== {name} ==")
+            print(table.head(20).to_string(index=False))
+        print(f"\nCSV tables written to {REPORTS}/")
 
 
 if __name__ == "__main__":

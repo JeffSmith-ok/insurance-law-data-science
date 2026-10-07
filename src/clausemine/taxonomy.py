@@ -1,45 +1,152 @@
-"""Regex patterns for policy clauses and interpretive doctrines.
+"""Clause and doctrine patterns.
 
-Keys match the variable names in CODEBOOK.md. Patterns are matched case-insensitively
-against opinion text. They detect *mentions*; use the hand-labeled sample to check how
-well a mention predicts that a clause was actually at issue.
+Edit this file to change what is tagged. Keys must match CODEBOOK.md: each clause key
+becomes a ``clause_<key>`` column and each doctrine key a ``doctrine_<key>`` column.
+
+Patterns are matched case-insensitively against normalized opinion text (HTML stripped,
+curly quotes straightened, whitespace collapsed). A key is tagged when the total number
+of matches across its patterns reaches the tagger's ``min_hits`` threshold.
 """
+
+from __future__ import annotations
 
 import re
 
+Q = r"[\"']?"  # optional straight quote, since quoted policy terms are common
+
 CLAUSES: dict[str, list[str]] = {
-    "pollution_exclusion": [r"pollution exclusion", r"pollutants? exclusion"],
-    "occurrence": [r'definition of [“"]?occurrence', r'[“"]occurrence[”"] (?:is defined|means)',
-                   r"constitutes? an [“\"]?occurrence"],
-    "expected_intended": [r"expected or intended"],
-    "your_work": [r'[“"]?your work[”"]? exclusion', r'[“"]?your product[”"]? exclusion'],
-    "virus_exclusion": [r"virus exclusion", r"exclusion of loss due to virus"],
-    "physical_loss": [r"direct physical loss"],
-    "anti_concurrent": [r"anti-?concurrent caus"],
-    "water_flood": [r"flood exclusion", r"surface water", r"water (?:damage )?exclusion"],
-    "assault_battery": [r"assault (?:and|&|or) battery exclusion"],
-    "professional_services": [r"professional services exclusion"],
-    "notice": [r"late notice", r"(?:prompt|timely) notice", r"notice[- ]prejudice"],
-    "cooperation": [r"cooperation clause", r"duty to cooperate"],
-    "other_insurance": [r"other[- ]insurance clause", r"other[- ]insurance provision"],
-    "prior_knowledge": [r"prior knowledge", r"known loss"],
+    "pollution_exclusion": [
+        r"\b(?:absolute|total|qualified|sudden[- ]and[- ]accidental)?\s*pollution[- ]exclusion",
+        r"\bpollutants?\s+exclusion",
+        r"\bexclusion\s+for\s+pollut",
+    ],
+    "occurrence": [
+        rf"\bdefinition\s+of\s+{Q}occurrence",
+        rf"{Q}occurrence{Q}\s+(?:is|was|means|as\s+defined)",
+        rf"\b(?:an|no|constitutes?\s+an?|was\s+an?)\s+{Q}occurrence{Q}",
+        rf"\b(?:an|no)\s+{Q}accident{Q}\s+(?:within|under)\s+the\s+(?:meaning|policy)",
+    ],
+    "expected_intended": [
+        r"\bexpected\s+(?:or|and/or)\s+intended",
+        r"\bintended\s+(?:or|and/or)\s+expected",
+        r"\bintentional[- ](?:acts?|injury)\s+exclusion",
+    ],
+    "your_work": [
+        rf"{Q}your\s+work{Q}\s+exclusion",
+        rf"{Q}your\s+product{Q}\s+exclusion",
+        rf"\b(?:exclusion|exclusions)\s+[jkl]\(?\d?\)?\s*\(?{Q}your\s+(?:work|product)",
+        r"\bsubcontractor\s+exception",
+    ],
+    "virus_exclusion": [
+        r"\bvirus\s+(?:or|and)\s+bacteria\s+exclusion",
+        r"\bvirus\s+exclusion",
+        r"\bexclusion\s+(?:of|for)\s+loss\s+(?:due\s+to|caused\s+by)\s+(?:a\s+)?virus",
+    ],
+    "physical_loss": [
+        rf"{Q}direct\s+physical\s+loss\s+(?:of\s+or\s+damage|or\s+damage)",
+        r"\bphysical\s+loss\s+(?:of\s+)?or\s+(?:physical\s+)?damage",
+        r"\bdirect\s+physical\s+loss",
+    ],
+    "anti_concurrent": [
+        r"\banti[- ]?concurrent[- ]caus",
+        r"\bregardless\s+of\s+any\s+other\s+cause\s+or\s+event\s+(?:that\s+)?contribut",
+    ],
+    "water_flood": [
+        r"\bflood\s+exclusion",
+        r"\bsurface[- ]water\s+exclusion",
+        r"\bwater[- ]damage\s+exclusion",
+        r"\bwater\s+exclusion",
+        r"\bexclu\w*\s+(?:for\s+)?(?:flood|surface\s+water)",
+    ],
+    "assault_battery": [
+        r"\bassault\s+(?:and|or|&)\s+battery\s+exclusion",
+        r"\bassault[- ]and[- ]battery\b",
+        r"\bassault\s+or\s+battery\s+(?:exclusion|endorsement)",
+    ],
+    "professional_services": [
+        r"\bprofessional[- ]services?\s+exclusion",
+        r"\bexclusion\s+for\s+professional\s+services",
+        rf"{Q}professional\s+services{Q}\s+(?:exclusion|endorsement)",
+    ],
+    "notice": [
+        r"\blate[- ]notice",
+        r"\b(?:prompt|timely)\s+notice",
+        r"\bnotice[- ]prejudice",
+        r"\bnotice\s+(?:provision|requirement|condition)",
+        r"\bas\s+soon\s+as\s+practicable",
+    ],
+    "cooperation": [
+        r"\bcooperation\s+(?:clause|provision|condition|requirement)",
+        r"\bduty\s+to\s+cooperate",
+        r"\bfail(?:ed|ure)\s+to\s+cooperate",
+    ],
+    "other_insurance": [
+        rf"{Q}other[- ]insurance{Q}\s+(?:clause|provision|condition)s?",
+        r"\bexcess\s+other[- ]insurance",
+        r"\bpro[- ]rata\s+(?:by\s+time\s+on\s+the\s+risk|allocation)",
+        r"\bmutually\s+repugnant",
+    ],
+    "prior_knowledge": [
+        r"\bprior[- ]knowledge\s+(?:exclusion|provision|condition)",
+        r"\bknown[- ]loss\s+(?:doctrine|rule|exclusion|provision)",
+        r"\bprior\s+(?:acts?|claims?)\s+exclusion",
+        r"\bknew\s+or\s+(?:reasonably\s+)?should\s+have\s+(?:known|foreseen)",
+    ],
 }
 
 DOCTRINES: dict[str, list[str]] = {
-    "ambiguity": [r"\bambiguous\b", r"\bambiguity\b"],
-    "contra_proferentem": [r"contra proferentem", r"constru(?:e|ed|ing)(?: \w+)? (?:strictly )?against the (?:insurer|drafter)",
-                           r"resolved in favor of the insured"],
-    "reasonable_expectations": [r"reasonable expectations"],
-    "duty_to_defend": [r"duty to defend"],
-    "eight_corners": [r"(?:eight|four)[- ]corners"],
-    "regulatory_estoppel": [r"regulatory estoppel"],
+    "ambiguity": [
+        r"\b(?:is|are|was|were|not|un)\s*ambiguous",
+        r"\bunambiguous(?:ly)?\b",
+        r"\bsusceptible\s+(?:of|to)\s+(?:more\s+than\s+one|two)\s+reasonable",
+        r"\bambiguity\b",
+    ],
+    "contra_proferentem": [
+        r"\bcontra\s+proferentem",
+        r"\bconstrued?\s+(?:strictly\s+)?against\s+the\s+(?:insurer|drafter|insurance\s+company)",
+        r"\bresolved?\s+(?:in\s+favor\s+of\s+the\s+insured|against\s+the\s+insurer)",
+        r"\bconstrued?\s+(?:liberally\s+)?in\s+favor\s+of\s+(?:the\s+)?(?:insured|coverage)",
+    ],
+    "reasonable_expectations": [
+        r"\breasonable[- ]expectations?\s+(?:doctrine|of\s+the\s+insured|test)",
+        r"\bobjectively\s+reasonable\s+expectations",
+        r"\breasonable\s+expectations\s+of\s+(?:an?\s+|the\s+)?(?:insured|policyholder)",
+    ],
+    "duty_to_defend": [
+        r"\bduty\s+to\s+defend",
+        r"\bobligation\s+to\s+defend",
+        r"\bdefense\s+obligation",
+    ],
+    "eight_corners": [
+        r"\beight[- ]corners?",
+        r"\bfour[- ]corners?\s+(?:rule|test|of\s+the\s+complaint)",
+        r"\ballegations\s+of\s+the\s+complaint\s+(?:and|with)\s+the\s+(?:terms\s+of\s+the\s+)?policy",
+    ],
+    "regulatory_estoppel": [
+        r"\bregulatory\s+estoppel",
+        r"\binsurance\s+services\s+office\b.{0,200}\b(?:represent|filing|regulators?)",
+        r"\b(?:ISO|drafters?)\b.{0,120}\brepresent\w*\s+to\s+(?:state\s+)?(?:insurance\s+)?regulators",
+    ],
 }
 
-
-def compile_patterns(groups: dict[str, list[str]]) -> dict[str, re.Pattern]:
-    return {key: re.compile("|".join(f"(?:{p})" for p in pats), re.IGNORECASE)
-            for key, pats in groups.items()}
+_FLAGS = re.IGNORECASE | re.DOTALL
 
 
-CLAUSE_PATTERNS = compile_patterns(CLAUSES)
-DOCTRINE_PATTERNS = compile_patterns(DOCTRINES)
+def _compile(table: dict[str, list[str]]) -> dict[str, list[re.Pattern[str]]]:
+    return {key: [re.compile(p, _FLAGS) for p in pats] for key, pats in table.items()}
+
+
+CLAUSE_PATTERNS = _compile(CLAUSES)
+DOCTRINE_PATTERNS = _compile(DOCTRINES)
+
+
+def clause_columns() -> list[str]:
+    return [f"clause_{k}" for k in CLAUSES]
+
+
+def doctrine_columns() -> list[str]:
+    return [f"doctrine_{k}" for k in DOCTRINES]
+
+
+def tag_columns() -> list[str]:
+    return clause_columns() + doctrine_columns()
