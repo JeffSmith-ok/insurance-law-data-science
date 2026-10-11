@@ -21,6 +21,8 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--filed-after", help="YYYY-MM-DD")
     c.add_argument("--filed-before", help="YYYY-MM-DD")
     c.add_argument("--out", type=Path, default=RAW_PATH)
+    c.add_argument("--delay", type=float, default=2.5,
+                   help="seconds between API requests (default 2.5; keeps under the rate limit)")
 
     t = sub.add_parser("tag", help="apply the taxonomy to downloaded opinions")
     t.add_argument("--min-hits", type=int, default=1,
@@ -54,7 +56,7 @@ def main(argv: list[str] | None = None) -> None:
             lo, hi = args.filed_after or "*", args.filed_before or "*"
             query = f"({query}) AND dateFiled:[{lo} TO {hi}]"
         filters = {"court": args.court} if args.court else {}
-        n = run(query, max_results=args.max, out_path=args.out, **filters)
+        n = run(query, max_results=args.max, out_path=args.out, delay=args.delay, **filters)
         print(f"Wrote {n} new opinions to {args.out}")
     elif args.cmd == "tag":
         from .tag import run

@@ -194,3 +194,60 @@ def test_analyze_tables(tmp_path):
     dbc = tables["doctrine_by_clause"].set_index("clause")
     assert dbc.loc["pollution_exclusion", "contra_proferentem"] == 1
     assert (tmp_path / "reports" / "clause_frequency.csv").exists()
+
+
+class _FakeResp:
+    def __init__(self, status, payload=None, headers=None):
+        self.status_code = status
+        self._payload = payload or {}
+        self.headers = headers or {}
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(f"{self.status_code}")
+
+
+class _FakeSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.headers = {}
+        self.calls = 0
+
+    def get(self, url, params=None, timeout=None):
+        self.calls += 1
+        return self.responses.pop(0)
+
+
+def test_rate_limit_waits_retry_after_then_succeeds(capsys):
+    from clausemine.collect import CourtListener
+    slept = []
+    session = _FakeSession([_FakeResp(429, headers={"Retry-After": "2409"}),
+                            _FakeResp(200, {"ok": True})])
+    client = CourtListener(token="t", session=session, delay=0, sleep=slept.append)
+    assert client._get("https://example.test") == {"ok": True}
+    assert session.calls == 2
+    assert sum(slept) >= 2409          # honoured the full Retry-After (plus margin)
+    err = capsys.readouterr().err
+    assert "rate limit" in err and "resuming about" in err
+
+
+def test_rate_limit_gives_up_after_max_waits():
+    import pytest as _pytest
+    import requests
+    from clausemine.collect import CourtListener
+    session = _FakeSession([_FakeResp(429, headers={"Retry-After": "1"})] * 3)
+    client = CourtListener(token="t", session=session, delay=0, sleep=lambda s: None,
+                           max_rate_limit_waits=2)
+    with _pytest.raises(requests.HTTPError):
+        client._get("https://example.test")
+
+
+def test_retry_after_parsing():
+    from clausemine.collect import _retry_after
+    assert _retry_after("120", default=5) == 120
+    assert _retry_after(None, default=5) == 5
+    assert _retry_after("garbage", default=7) == 7

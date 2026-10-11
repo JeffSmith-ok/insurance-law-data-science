@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
+from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Iterator
 
@@ -24,8 +27,17 @@ TEXT_FIELDS = ["html_with_citations", "html_lawbox", "html_columbia", "xml_harva
 
 
 class CourtListener:
-    def __init__(self, token: str | None = None, delay: float = 0.75,
-                 session: requests.Session | None = None, max_retries: int = 4):
+    """Small CourtListener client that stays under the API's rate limits.
+
+    CourtListener caps how many requests an account may make per hour. When it answers
+    429 Too Many Requests it says how long to wait (Retry-After, often tens of minutes).
+    This client prints that wait and the time it will resume, sleeps through it, and
+    carries on, so a long pull never sits silently.
+    """
+
+    def __init__(self, token: str | None = None, delay: float = 2.5,
+                 session: requests.Session | None = None, max_retries: int = 4,
+                 max_rate_limit_waits: int = 6, sleep=time.sleep):
         token = token or os.environ.get("COURTLISTENER_TOKEN")
         if not token:
             raise RuntimeError("Set COURTLISTENER_TOKEN (free token: "
@@ -35,20 +47,56 @@ class CourtListener:
                                      "User-Agent": "clausemine/0.1 (research)"})
         self.delay = delay
         self.max_retries = max_retries
+        self.max_rate_limit_waits = max_rate_limit_waits
+        self._sleep = sleep
+
+    def _wait(self, seconds: float, reason: str) -> None:
+        """Sleep, telling the user why, for how long, and when work resumes."""
+        seconds = max(1.0, seconds)
+        resume = datetime.now() + timedelta(seconds=seconds)
+        print(f"  {reason}: waiting {_fmt(seconds)}, resuming about "
+              f"{resume.strftime('%I:%M %p').lstrip('0')} (Ctrl+C is safe; rerun to resume)",
+              file=sys.stderr, flush=True)
+        remaining = seconds
+        while remaining > 0:
+            step = min(remaining, 300.0)
+            self._sleep(step)
+            remaining -= step
+            if remaining > 0:
+                print(f"  ...still waiting, {_fmt(remaining)} left", file=sys.stderr, flush=True)
 
     def _get(self, url: str, params: dict | None = None) -> dict:
-        for attempt in range(self.max_retries + 1):
-            resp = self.session.get(url, params=params, timeout=60)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                if attempt == self.max_retries:
-                    resp.raise_for_status()
-                wait = float(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
-                time.sleep(wait)
+        errors = 0
+        rate_waits = 0
+        while True:
+            try:
+                resp = self.session.get(url, params=params, timeout=60)
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                errors += 1
+                if errors > self.max_retries:
+                    raise
+                self._wait(2 ** errors * 5, f"Network problem ({type(exc).__name__})")
                 continue
+
+            if resp.status_code == 429:
+                rate_waits += 1
+                if rate_waits > self.max_rate_limit_waits:
+                    resp.raise_for_status()
+                wait = _retry_after(resp.headers.get("Retry-After"), default=60.0)
+                self._wait(wait + 5, "CourtListener rate limit reached")
+                continue
+
+            if resp.status_code >= 500:
+                errors += 1
+                if errors > self.max_retries:
+                    resp.raise_for_status()
+                wait = _retry_after(resp.headers.get("Retry-After"), default=2 ** errors * 5)
+                self._wait(wait, f"CourtListener server error {resp.status_code}")
+                continue
+
             resp.raise_for_status()
-            time.sleep(self.delay)
+            self._sleep(self.delay)
             return resp.json()
-        raise RuntimeError("unreachable")
 
     def search(self, query: str, max_results: int = 200, **filters) -> Iterator[dict]:
         """Yield one dict per *opinion* (a search hit is a cluster that may hold several)."""
@@ -80,6 +128,32 @@ class CourtListener:
         return extract_text(data)
 
 
+def _retry_after(value: str | None, default: float) -> float:
+    """Seconds to wait from a Retry-After header (a number of seconds or an HTTP date)."""
+    if not value:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+        return max(0.0, (when - datetime.now(when.tzinfo)).total_seconds())
+    except (TypeError, ValueError):
+        return default
+
+
+def _fmt(seconds: float) -> str:
+    seconds = int(round(seconds))
+    if seconds < 90:
+        return f"{seconds}s"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 90:
+        return f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min"
+
+
 def extract_text(opinion: dict) -> str:
     for field in TEXT_FIELDS:
         value = opinion.get(field)
@@ -100,8 +174,8 @@ def existing_ids(path: Path) -> set:
 
 
 def run(query: str, max_results: int = 200, out_path: Path = RAW_PATH,
-        client: CourtListener | None = None, **filters) -> int:
-    client = client or CourtListener()
+        client: CourtListener | None = None, delay: float = 2.5, **filters) -> int:
+    client = client or CourtListener(delay=delay)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     seen = existing_ids(out_path)
     written = 0
