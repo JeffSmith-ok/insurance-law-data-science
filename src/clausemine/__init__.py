@@ -10,4 +10,4 @@ TAGGED_PATH = DATA / "processed" / "tagged.csv"
 LABELS_PATH = DATA / "labels" / "sample.csv"
 REPORTS = Path("reports")
 
-ID_COLS = ["opinion_id", "cluster_id", "opinion_type", "case_name", "court", "date_filed"]
+ID_COLS = ["opinion_id", "cluster_id", "opinion_type", "case_name", "court", "date_filed", "query"]
