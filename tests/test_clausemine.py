@@ -61,6 +61,27 @@ def test_min_hits_threshold():
     assert tag.tag_text(text, min_hits=2)["clause_pollution_exclusion"] == 0
 
 
+def test_density_cutoff_drops_boilerplate_in_long_opinions():
+    # One passing mention of the duty to defend buried in ~20,000 characters of other text
+    # is boilerplate (0.5 hits per 10k chars < 1.0 cutoff); a dense discussion is not.
+    filler = "The court reviewed the record and the parties' briefs. " * 360
+    passing = filler + "The insurer had a duty to defend."
+    assert tag.tag_text(passing)["doctrine_duty_to_defend"] == 0
+    assert tag.tag_text(passing, use_density=False)["doctrine_duty_to_defend"] == 1
+    dense = filler + "The duty to defend is broad. " * 5
+    assert tag.tag_text(dense)["doctrine_duty_to_defend"] == 1
+
+
+@pytest.mark.parametrize("text", [
+    'The "damage to your work" exclusion bars the claim.',
+    "Exclusions j(5) and j(6) unambiguously exclude coverage.",
+    "The business risk exclusions apply to faulty workmanship.",
+    "The products-completed operations hazard exclusion negates coverage.",
+])
+def test_your_work_variants(text):
+    assert tag.tag_text(text)["clause_your_work"] == 1
+
+
 def test_taxonomy_keys_match_codebook():
     assert len(CLAUSES) == 16 and len(DOCTRINES) == 6
 

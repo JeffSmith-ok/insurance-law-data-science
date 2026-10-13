@@ -27,6 +27,8 @@ def main(argv: list[str] | None = None) -> None:
     t = sub.add_parser("tag", help="apply the taxonomy to downloaded opinions")
     t.add_argument("--min-hits", type=int, default=1,
                    help="matches required to tag a key (raise to cut passing mentions)")
+    t.add_argument("--no-density", action="store_true",
+                   help="ignore the per-10,000-character cutoffs in taxonomy.MIN_DENSITY")
     t.add_argument("--raw", type=Path, default=RAW_PATH)
     t.add_argument("--out", type=Path, default=TAGGED_PATH)
 
@@ -60,7 +62,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Wrote {n} new opinions to {args.out}")
     elif args.cmd == "tag":
         from .tag import run
-        df = run(args.raw, args.out, min_hits=args.min_hits)
+        df = run(args.raw, args.out, min_hits=args.min_hits, use_density=not args.no_density)
         print(f"Tagged {len(df)} opinions -> {args.out}")
     elif args.cmd == "sample":
         from .evaluate import draw_sample

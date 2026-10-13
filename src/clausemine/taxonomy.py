@@ -36,6 +36,10 @@ CLAUSES: dict[str, list[str]] = {
         rf"{Q}your\s+product{Q}\s+exclusion",
         rf"\b(?:exclusion|exclusions)\s+[jkl]\(?\d?\)?\s*\(?{Q}your\s+(?:work|product)",
         r"\bsubcontractor\s+exception",
+        rf"{Q}damage\s+to\s+your\s+(?:work|product){Q}",
+        r"\bexclusions?\s+j\s*\(\s*[56]\s*\)",
+        r"\bbusiness[- ]risk\s+exclusions?",
+        r"\b(?:work[- ]product|products[- ]completed\s+operations(?:\s+hazard)?)\s+exclusion",
     ],
     "virus_exclusion": [
         r"\bvirus\s+(?:or|and)\s+bacteria\s+exclusion",
@@ -139,6 +143,23 @@ DOCTRINES: dict[str, list[str]] = {
         r"\binsurance\s+services\s+office\b.{0,200}\b(?:represent|filing|regulators?)",
         r"\b(?:ISO|drafters?)\b.{0,120}\brepresent\w*\s+to\s+(?:state\s+)?(?:insurance\s+)?regulators",
     ],
+}
+
+# Minimum hits per 10,000 characters for a key to be tagged. Courts recite boilerplate
+# ("ambiguities are construed against the insurer", "the duty to defend is broader than
+# the duty to indemnify") in opinions that never decide the issue; opinions that do decide
+# it discuss the language far more densely. Normalizing by length keeps long opinions from
+# clearing the bar on boilerplate alone. Cutoffs were chosen on the 150-opinion hand-labeled
+# sample and checked on held-out halves (see CODEBOOK.md, "Tagger validation").
+# Keys not listed use only the min_hits threshold.
+MIN_DENSITY: dict[str, float] = {
+    "pollution_exclusion": 1.0,
+    "occurrence": 2.0,
+    "expected_intended": 1.0,
+    "physical_loss": 2.0,
+    "notice": 1.0,
+    "ambiguity": 1.5,
+    "duty_to_defend": 1.0,
 }
 
 _FLAGS = re.IGNORECASE | re.DOTALL
