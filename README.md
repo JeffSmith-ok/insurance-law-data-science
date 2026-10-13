@@ -40,6 +40,7 @@ clausemine tag
 clausemine sample --n 150          # draw a sample to hand-label
 clausemine evaluate                # after filling in data/labels/sample.csv
 clausemine analyze
+clausemine findings                # reports/findings.json: the numbers shown on smithcapital.dev
 pytest
 ```
 

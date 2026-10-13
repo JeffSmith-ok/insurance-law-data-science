@@ -274,3 +274,20 @@ def test_retry_after_parsing():
     assert _retry_after("120", default=5) == 120
     assert _retry_after(None, default=5) == 5
     assert _retry_after("garbage", default=7) == 7
+
+
+# --- findings -----------------------------------------------------------------
+
+def test_findings_groups_and_case_collapse():
+    from clausemine import findings
+    assert findings.assign_group('"late notice" AND insurer AND prejudice') == "late"
+    assert findings.assign_group('"your work" AND exclusion AND insurer') == "con"
+    assert findings.assign_group("something else") is None
+    df = pd.DataFrame({
+        "cluster_id": [1, 1, 2],
+        "query": ['"pollution exclusion" AND insurer'] * 3,
+        "doctrine_ambiguity": [0, 1, 0],  # case 1: lead says 0, another opinion says 1 -> case counts 1
+    })
+    cases = findings.to_cases(df, ["doctrine_ambiguity"])
+    assert cases.set_index("cluster_id")["doctrine_ambiguity"].to_dict() == {1: 1, 2: 0}
+    assert set(cases["group"]) == {"pol"}

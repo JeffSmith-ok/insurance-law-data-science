@@ -1,4 +1,4 @@
-"""Command-line interface: clausemine {collect,tag,sample,evaluate,agreement,analyze}."""
+"""Command-line interface: clausemine {collect,tag,sample,evaluate,agreement,analyze,findings}."""
 
 from __future__ import annotations
 
@@ -46,6 +46,7 @@ def main(argv: list[str] | None = None) -> None:
     a.add_argument("labels_b", type=Path)
 
     sub.add_parser("analyze", help="write summary tables to reports/")
+    sub.add_parser("findings", help="write reports/findings.json (the numbers shown on the website)")
 
     args = p.parse_args(argv)
     pd.set_option("display.width", 160)
@@ -82,6 +83,16 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n== {name} ==")
             print(table.head(20).to_string(index=False))
         print(f"\nCSV tables written to {REPORTS}/")
+    elif args.cmd == "findings":
+        from .findings import FINDINGS_PATH, run
+        res = run()
+        t = res["tagged"]
+        print(f"Tagged: {t['cases']} cases ({t['opinions']} opinions), "
+              f"{res['excluded_cases']} non-coverage cases excluded")
+        if "labeled" in res:
+            lab = res["labeled"]
+            print(f"Hand-labeled: {lab['cases']} cases ({lab['opinions']} opinions), labelers {lab['labelers']}")
+        print(f"Wrote {FINDINGS_PATH}")
 
 
 if __name__ == "__main__":
