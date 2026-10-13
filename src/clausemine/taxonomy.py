@@ -94,7 +94,6 @@ CLAUSES: dict[str, list[str]] = {
         r"\bprior[- ]knowledge\s+(?:exclusion|provision|condition)",
         r"\bknown[- ]loss\s+(?:doctrine|rule|exclusion|provision)",
         r"\bprior\s+(?:acts?|claims?)\s+exclusion",
-        r"\bknew\s+or\s+(?:reasonably\s+)?should\s+have\s+(?:known|foreseen)",
     ],
     "liquor_liability": [
         r"\bliquor[- ]liability\s+(?:exclusion|endorsement|coverage|policy)",
