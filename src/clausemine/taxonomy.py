@@ -92,6 +92,18 @@ CLAUSES: dict[str, list[str]] = {
         r"\bprior\s+(?:acts?|claims?)\s+exclusion",
         r"\bknew\s+or\s+(?:reasonably\s+)?should\s+have\s+(?:known|foreseen)",
     ],
+    "liquor_liability": [
+        r"\bliquor[- ]liability\s+(?:exclusion|endorsement|coverage|policy)",
+        r"\bliquor\s+(?:liability\s+)?exclusion",
+        rf"{Q}in\s+the\s+business\s+of\s+manufacturing,\s+distributing,\s+selling,\s+serving\s+or\s+furnishing\s+alcoholic",
+        r"\bdram[- ]shop\b",
+    ],
+    "mold": [
+        r"\b(?:mold|mould)\s+(?:or\s+fungi\s+|and\s+fungi\s+)?exclusion",
+        r"\bfungi\s+(?:or|and)\s+bacteria\s+exclusion",
+        r"\bfungus\s+exclusion",
+        r"\bexclusion\s+(?:for|of)\s+(?:loss\s+(?:caused\s+by|due\s+to)\s+)?(?:mold|mould|fungi|fungus)",
+    ],
 }
 
 DOCTRINES: dict[str, list[str]] = {

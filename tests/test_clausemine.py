@@ -24,6 +24,8 @@ POSITIVE = {
     "clause_cooperation": "The insured breached the cooperation clause.",
     "clause_other_insurance": "The other insurance clauses are mutually repugnant.",
     "clause_prior_knowledge": "The known loss doctrine bars coverage.",
+    "clause_liquor_liability": "The liquor liability exclusion applies to the bar's dram shop claim.",
+    "clause_mold": "The policy's mold exclusion bars coverage for the fungal growth.",
     "doctrine_ambiguity": "We hold the term is ambiguous.",
     "doctrine_contra_proferentem": "Ambiguities are construed against the insurer.",
     "doctrine_reasonable_expectations": "Under the reasonable expectations doctrine...",
@@ -60,7 +62,7 @@ def test_min_hits_threshold():
 
 
 def test_taxonomy_keys_match_codebook():
-    assert len(CLAUSES) == 14 and len(DOCTRINES) == 6
+    assert len(CLAUSES) == 16 and len(DOCTRINES) == 6
 
 
 # --- collect -----------------------------------------------------------------

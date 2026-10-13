@@ -34,6 +34,8 @@ mention, a recital of the policy, or discussion in a quoted case = 0.
 | `cooperation` | Cooperation clause | |
 | `other_insurance` | Other-insurance clause | Allocation among insurers |
 | `prior_knowledge` | Prior knowledge / known loss | Claims-made policies |
+| `liquor_liability` | Liquor liability exclusion / dram shop | Bars, restaurants, event hosts |
+| `mold` | Mold / fungi exclusion | Property and CGL; often paired with water damage |
 
 ## Doctrine variables (0/1 each, `doctrine_<key>`)
 
