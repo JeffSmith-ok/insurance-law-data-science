@@ -31,6 +31,7 @@ GROUPS = [
     ("con", "Construction defect", "your work"),
     ("late", "Late notice", "late notice"),
     ("prop", "Property / COVID", "direct physical loss"),
+    ("liq", "Liquor liability", "liquor liability"),
 ]
 
 TAGGED_ROWS = {
@@ -40,6 +41,8 @@ TAGGED_ROWS = {
         ("clause_notice", "Notice condition"),
         ("clause_physical_loss", "Direct physical loss or damage"),
         ("clause_virus_exclusion", "Virus exclusion"),
+        ("clause_liquor_liability", "Liquor liability exclusion"),
+        ("clause_assault_battery", "Assault & battery exclusion"),
     ],
 }
 LABELED_ROWS = [
