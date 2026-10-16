@@ -291,3 +291,14 @@ def test_findings_groups_and_case_collapse():
     cases = findings.to_cases(df, ["doctrine_ambiguity"])
     assert cases.set_index("cluster_id")["doctrine_ambiguity"].to_dict() == {1: 1, 2: 0}
     assert set(cases["group"]) == {"pol"}
+
+
+def test_collect_max_counts_only_new_opinions(tmp_path, capsys):
+    # Opinion 10 (page 1) is already collected; --max 1 must page on and fetch opinion 20.
+    out = tmp_path / "op.jsonl"
+    out.write_text(json.dumps({"opinion_id": 10, "text": "old"}) + "\n")
+    client = collect.CourtListener(token="t", delay=0, session=FakeSession())
+    assert collect.run("q", max_results=1, out_path=out, client=client) == 1
+    ids = [json.loads(l)["opinion_id"] for l in out.read_text().splitlines()]
+    assert ids == [10, 20]
+    assert "1 hits were already collected" in capsys.readouterr().out

@@ -174,14 +174,23 @@ def existing_ids(path: Path) -> set:
 
 
 def run(query: str, max_results: int = 200, out_path: Path = RAW_PATH,
-        client: CourtListener | None = None, delay: float = 2.5, **filters) -> int:
+        client: CourtListener | None = None, delay: float = 2.5, max_scan: int = 2000,
+        **filters) -> int:
+    """Download up to ``max_results`` *new* opinions for ``query``.
+
+    Opinions already in ``out_path`` are skipped and do not count toward ``max_results``, so
+    a search that overlaps an earlier one keeps paging until it finds new cases. ``max_scan``
+    caps how many search hits are examined in total (paging is cheap: one request per 20 hits;
+    each new opinion costs one more request for its text).
+    """
     client = client or CourtListener(delay=delay)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     seen = existing_ids(out_path)
-    written = 0
+    written = skipped = 0
     with open(out_path, "a", encoding="utf-8") as f:
-        for meta in client.search(query, max_results=max_results, **filters):
+        for meta in client.search(query, max_results=max_scan, **filters):
             if meta["opinion_id"] in seen:
+                skipped += 1
                 continue
             meta["query"] = query
             meta["text"] = client.opinion_text(meta["opinion_id"])
@@ -190,4 +199,8 @@ def run(query: str, max_results: int = 200, out_path: Path = RAW_PATH,
             seen.add(meta["opinion_id"])
             written += 1
             print(f"[{written}] {meta['court']} {meta['date_filed']} {meta['case_name']}")
+            if written >= max_results:
+                break  # stop before paging further
+    if skipped:
+        print(f"  ({skipped} hits were already collected and skipped)")
     return written
