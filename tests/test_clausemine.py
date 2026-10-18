@@ -302,3 +302,13 @@ def test_collect_max_counts_only_new_opinions(tmp_path, capsys):
     ids = [json.loads(l)["opinion_id"] for l in out.read_text().splitlines()]
     assert ids == [10, 20]
     assert "1 hits were already collected" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("text", [
+    'The "fungi or bacteria" exclusion bars the claim.',
+    "The policy's mold endorsement caps coverage at $10,000.",
+    "Coverage for fungi, wet or dry rot or bacteria is limited.",
+    "The policy excludes coverage for fungi and mold.",
+])
+def test_mold_variants(text):
+    assert tag.tag_text(text)["clause_mold"] == 1

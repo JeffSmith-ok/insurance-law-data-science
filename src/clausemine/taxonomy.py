@@ -106,6 +106,10 @@ CLAUSES: dict[str, list[str]] = {
         r"\bfungi\s+(?:or|and)\s+bacteria\s+exclusion",
         r"\bfungus\s+exclusion",
         r"\bexclusion\s+(?:for|of)\s+(?:loss\s+(?:caused\s+by|due\s+to)\s+)?(?:mold|mould|fungi|fungus)",
+        rf"\bfungi\s+(?:or|and|/)\s+bacteria{Q}\s+(?:exclusion|endorsement|coverage)",
+        r"\b(?:mold|mould|fungi|fungus)\s+(?:endorsement|sublimit|limitation)",
+        r"\bfungi,\s+(?:wet\s+or\s+dry\s+rot|mold|mould)",
+        r"\bexclu(?:de[sd]?|sion)\s+(?:coverage\s+for\s+|(?:damages?|loss(?:es)?)\s+(?:caused\s+by|from)\s+)?(?:rot,\s+)?(?:mold|mould|fungi|fungus)\b",
     ],
 }
 

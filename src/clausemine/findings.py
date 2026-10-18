@@ -25,13 +25,17 @@ from .taxonomy import tag_columns
 EXCLUDED_PATH = DATA / "labels" / "excluded_cases.csv"
 FINDINGS_PATH = REPORTS / "findings.json"
 
-# Dispute type, assigned from the CourtListener search that found the case.
+# Dispute type, assigned from the CourtListener search that found the case: the first group
+# whose search phrase appears in the query. ("occurrence" + CGL searches return mostly
+# construction-defect disputes.)
 GROUPS = [
-    ("pol", "Pollution exclusion", "pollution exclusion"),
-    ("con", "Construction defect", "your work"),
-    ("late", "Late notice", "late notice"),
-    ("prop", "Property / COVID", "direct physical loss"),
-    ("liq", "Liquor liability", "liquor liability"),
+    ("pol", "Pollution exclusion", ("pollution exclusion",)),
+    ("con", "Construction defect", ("your work", '"occurrence"')),
+    ("late", "Late notice", ("late notice",)),
+    ("prop", "Property / COVID", ("direct physical loss",)),
+    ("liq", "Liquor liability", ("liquor liability",)),
+    ("ab", "Assault & battery", ("assault and battery",)),
+    ("mold", "Mold", ('"mold"',)),
 ]
 
 TAGGED_ROWS = {
@@ -43,6 +47,7 @@ TAGGED_ROWS = {
         ("clause_virus_exclusion", "Virus exclusion"),
         ("clause_liquor_liability", "Liquor liability exclusion"),
         ("clause_assault_battery", "Assault & battery exclusion"),
+        ("clause_mold", "Mold / fungi exclusion"),
     ],
 }
 LABELED_ROWS = [
@@ -66,8 +71,8 @@ ACCURACY_KEYS = [
 
 def assign_group(query: str) -> str | None:
     q = str(query).lower()
-    for key, _, needle in GROUPS:
-        if needle in q:
+    for key, _, needles in GROUPS:
+        if any(n in q for n in needles):
             return key
     return None
 
@@ -106,7 +111,8 @@ def tagged_block(tagged: pd.DataFrame, excluded: set[int]) -> dict:
     df = tagged[~tagged["cluster_id"].isin(excluded)]
     cases = to_cases(df, tag_columns())
     cases = cases[cases["group"].notna()]
-    return {"opinions": int(len(df)), "cases": int(len(cases)), "groups": _groups(cases),
+    opinions = df[df["cluster_id"].isin(cases["cluster_id"])]
+    return {"opinions": int(len(opinions)), "cases": int(len(cases)), "groups": _groups(cases),
             "clauses": _rates(cases, TAGGED_ROWS["clauses"])}
 
 

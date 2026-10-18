@@ -103,3 +103,17 @@ cases in this sample, so their scores are not yet meaningful.
 
 The cutoffs were fitted to this sample, so the scores above are optimistic. The next
 labeled sample should be drawn from newly collected opinions and used as a true test set.
+
+## Case exclusions
+
+Keyword searches return some cases that are not insurance coverage disputes. Examples: a
+criminal assault prosecution, a tenant's mold-injury suit, a contract with a company named
+"... Mold, Inc.", or a notice of claim against a city. These are listed with a reason in
+`data/labels/excluded_cases.csv` and dropped from findings (`clausemine findings`).
+
+Screening rule for a new search: keep every case with an insurer in the caption. Review the
+rest. A case with no insurer in the caption and coverage language ("duty to defend",
+"coverage", "exclusion applies") below 1.2 hits per 10,000 characters is excluded. Cases
+above that line are kept: in October 2026 they were all coverage disputes, including
+Louisiana direct-action suits that name the insurer alongside the insured. Borderline
+cases are read by hand.
