@@ -329,3 +329,20 @@ def test_second_sample_skips_labeled_and_excluded_cases(tmp_path):
     df = evaluate.draw_sample(tagged, tmp_path / "sample2.csv", n=10, skip=[first],
                               one_per_case=True, excluded_path=excl)
     assert sorted(df["opinion_id"]) == [21, 31]  # case 1 labeled, case 4 excluded, case 2 -> lead only
+
+
+def test_sample_skips_duplicate_cluster_of_labeled_case(tmp_path):
+    tagged = tmp_path / "tagged.csv"
+    pd.DataFrame([
+        {"opinion_id": 11, "cluster_id": 1, "opinion_type": "combined-opinion", "case_name": "Acme v. Ins. Co.",
+         "url": "u", "court": "c", "date_filed": "2020-01-01", "query": "q"},
+        {"opinion_id": 21, "cluster_id": 2, "opinion_type": "combined-opinion", "case_name": "Acme v. Ins. Co.",
+         "url": "u", "court": "c", "date_filed": "2020-01-02", "query": "q"},
+        {"opinion_id": 31, "cluster_id": 3, "opinion_type": "combined-opinion", "case_name": "Other v. Ins. Co.",
+         "url": "u", "court": "c", "date_filed": "2020-01-03", "query": "q"},
+    ]).to_csv(tagged, index=False)
+    first = tmp_path / "sample.csv"
+    pd.DataFrame({"opinion_id": [11], "cluster_id": [1], "case_name": ["Acme v. Ins. Co."]}).to_csv(first, index=False)
+    df = evaluate.draw_sample(tagged, tmp_path / "s2.csv", n=10, skip=[first],
+                              excluded_path=tmp_path / "none.csv")
+    assert list(df["opinion_id"]) == [31]

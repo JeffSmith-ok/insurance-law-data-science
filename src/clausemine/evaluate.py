@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +13,11 @@ from .taxonomy import tag_columns
 
 OUTCOME_COLS = ["coverage_outcome", "primary_clause", "notes", "labeler"]
 OUTCOMES = {"policyholder", "insurer", "mixed", "none"}
+
+
+def _name_key(name: str) -> str:
+    """Case-name key for spotting duplicate clusters: lowercase letters only, first 40."""
+    return re.sub(r"[^a-z]", "", str(name).lower())[:40]
 
 
 def draw_sample(tagged_path: Path = TAGGED_PATH, out_path: Path = LABELS_PATH,
@@ -30,8 +37,14 @@ def draw_sample(tagged_path: Path = TAGGED_PATH, out_path: Path = LABELS_PATH,
                               "hand labels.")
     tagged = pd.read_csv(tagged_path)
     drop: set[int] = set()
+    skip_names: set[str] = set()
     for path in skip or []:
-        drop |= set(pd.read_csv(path)["cluster_id"].dropna().astype(int))
+        earlier = pd.read_csv(path)
+        drop |= set(earlier["cluster_id"].dropna().astype(int))
+        if "case_name" in earlier:
+            skip_names |= set(earlier["case_name"].dropna().map(_name_key))
+    if skip_names:  # CourtListener sometimes files one decision under two cluster IDs
+        drop |= set(tagged.loc[tagged["case_name"].fillna("").map(_name_key).isin(skip_names), "cluster_id"])
     excluded_path = excluded_path or (DATA / "labels" / "excluded_cases.csv")
     if excluded_path.exists():
         drop |= set(pd.read_csv(excluded_path)["cluster_id"].astype(int))

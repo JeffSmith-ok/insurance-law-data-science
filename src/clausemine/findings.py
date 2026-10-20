@@ -24,6 +24,9 @@ from .taxonomy import tag_columns
 
 EXCLUDED_PATH = DATA / "labels" / "excluded_cases.csv"
 FINDINGS_PATH = REPORTS / "findings.json"
+# Second labeling sample, drawn only from cases not in the first (clausemine sample --skip).
+# The tagger was never tuned on it, so it is the held-out test of accuracy.
+HOLDOUT_PATH = DATA / "labels" / "sample2.csv"
 
 # Dispute type, assigned from the CourtListener search that found the case: the first group
 # whose search phrase appears in the query. ("occurrence" + CGL searches return mostly
@@ -66,6 +69,11 @@ ACCURACY_KEYS = [
     ("doctrine_duty_to_defend", "Duty to defend"),
     ("doctrine_ambiguity", "Ambiguity"),
     ("doctrine_contra_proferentem", "Construed against insurer"),
+]
+HOLDOUT_EXTRA_KEYS = [
+    ("clause_assault_battery", "Assault & battery exclusion"),
+    ("clause_liquor_liability", "Liquor liability exclusion"),
+    ("clause_mold", "Mold / fungi exclusion"),
 ]
 
 
@@ -134,18 +142,19 @@ def labeled_block(labels: pd.DataFrame, excluded: set[int]) -> dict:
             "groups": _groups(cases), "doctrines": _rates(cases, LABELED_ROWS), "outcomes": outcomes}
 
 
-def accuracy_block(tagged: pd.DataFrame, labels: pd.DataFrame, raw_path: Path) -> dict:
-    """Precision/recall of the current tagger, and of the single-mention rule if raw text is present."""
+def accuracy_block(tagged: pd.DataFrame, labels: pd.DataFrame, raw_path: Path | None,
+                   keys: list[tuple[str, str]] = ACCURACY_KEYS) -> dict:
+    """Precision/recall of the current tagger, and of the single-mention rule if raw text is given."""
     lab = _clean_labels(labels)
     current = lab.merge(tagged, on="opinion_id", suffixes=("_gold", "_pred"))
     single = None
-    if raw_path.exists():
+    if raw_path is not None and raw_path.exists():
         want = set(lab["opinion_id"])
         rows = [{"opinion_id": r["opinion_id"], **tag_text(r.get("text") or "", use_density=False)}
                 for r in read_jsonl(raw_path) if r.get("opinion_id") in want]
         single = lab.merge(pd.DataFrame(rows), on="opinion_id", suffixes=("_gold", "_pred"))
     out = []
-    for col, label in ACCURACY_KEYS:
+    for col, label in keys:
         m = binary_metrics(current[f"{col}_pred"], current[f"{col}_gold"])
         row = {"label": label, "var": col, "support": int(m["support"]),
                "precision": round(float(m["precision"]), 2), "recall": round(float(m["recall"]), 2)}
@@ -157,8 +166,18 @@ def accuracy_block(tagged: pd.DataFrame, labels: pd.DataFrame, raw_path: Path) -
     return {"opinions": int(len(current)), "rows": out}
 
 
+def holdout_block(tagged: pd.DataFrame, labels: pd.DataFrame, excluded: set[int]) -> dict:
+    """Tagger accuracy on the second sample, plus who labeled it (AI-draft vs. attorney)."""
+    lab = labels[~labels["cluster_id"].isin(excluded)]
+    block = accuracy_block(tagged, lab, None, ACCURACY_KEYS + HOLDOUT_EXTRA_KEYS)
+    block["cases"] = int(lab["cluster_id"].nunique())
+    block["labelers"] = sorted(set(lab["labeler"].dropna().astype(str))) if "labeler" in lab else []
+    return block
+
+
 def run(tagged_path: Path = TAGGED_PATH, labels_path: Path = LABELS_PATH, raw_path: Path = RAW_PATH,
-        excluded_path: Path = EXCLUDED_PATH, out_path: Path = FINDINGS_PATH) -> dict:
+        excluded_path: Path = EXCLUDED_PATH, out_path: Path = FINDINGS_PATH,
+        holdout_path: Path = HOLDOUT_PATH) -> dict:
     tagged = pd.read_csv(tagged_path)
     excluded = _excluded(excluded_path)
     result = {"tagged": tagged_block(tagged, excluded), "excluded_cases": len(excluded)}
@@ -166,6 +185,8 @@ def run(tagged_path: Path = TAGGED_PATH, labels_path: Path = LABELS_PATH, raw_pa
         labels = pd.read_csv(labels_path)
         result["labeled"] = labeled_block(labels, excluded)
         result["accuracy"] = accuracy_block(tagged, labels, raw_path)
+    if holdout_path.exists():
+        result["holdout"] = holdout_block(tagged, pd.read_csv(holdout_path), excluded)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     return result
