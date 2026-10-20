@@ -38,6 +38,7 @@ export COURTLISTENER_TOKEN=...
 clausemine collect --query '"pollution exclusion" AND insurer' --max 200
 clausemine tag
 clausemine sample --n 150          # draw a sample to hand-label
+clausemine sample --n 50 --out data/labels/sample2.csv --skip data/labels/sample.csv --one-per-case  # fresh test sample
 clausemine evaluate                # after filling in data/labels/sample.csv
 clausemine analyze
 clausemine findings                # reports/findings.json: the numbers shown on smithcapital.dev

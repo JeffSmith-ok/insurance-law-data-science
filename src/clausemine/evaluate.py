@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import ID_COLS, LABELS_PATH, REPORTS, TAGGED_PATH
+from . import DATA, ID_COLS, LABELS_PATH, REPORTS, TAGGED_PATH
 from .taxonomy import tag_columns
 
 OUTCOME_COLS = ["coverage_outcome", "primary_clause", "notes", "labeler"]
@@ -14,13 +14,33 @@ OUTCOMES = {"policyholder", "insurer", "mixed", "none"}
 
 
 def draw_sample(tagged_path: Path = TAGGED_PATH, out_path: Path = LABELS_PATH,
-                n: int = 150, seed: int = 42, force: bool = False) -> pd.DataFrame:
-    """Write a blank labeling sheet. Tagger predictions are NOT included, so labeling is blind."""
+                n: int = 150, seed: int = 42, force: bool = False,
+                skip: list[Path] | None = None, one_per_case: bool = False,
+                excluded_path: Path | None = None) -> pd.DataFrame:
+    """Write a blank labeling sheet. Tagger predictions are NOT included, so labeling is blind.
+
+    ``skip``: earlier labeling sheets; every case (cluster) in them is left out, so a second
+    sample tests the tagger only on cases it was never checked or tuned against.
+    ``one_per_case``: draw at most one opinion per case (the lead or combined opinion when
+    there is one), so labels are not spent on duplicate copies of the same decision.
+    ``excluded_path``: the non-coverage case list (default data/labels/excluded_cases.csv).
+    """
     if out_path.exists() and not force:
         raise FileExistsError(f"{out_path} exists; pass force=True (--force) to overwrite "
                               "hand labels.")
     tagged = pd.read_csv(tagged_path)
-    sample = tagged.sample(n=min(n, len(tagged)), random_state=seed)[ID_COLS].copy()
+    drop: set[int] = set()
+    for path in skip or []:
+        drop |= set(pd.read_csv(path)["cluster_id"].dropna().astype(int))
+    excluded_path = excluded_path or (DATA / "labels" / "excluded_cases.csv")
+    if excluded_path.exists():
+        drop |= set(pd.read_csv(excluded_path)["cluster_id"].astype(int))
+    pool = tagged[~tagged["cluster_id"].isin(drop)]
+    if one_per_case:
+        rank = pool["opinion_type"].map({"combined-opinion": 0, "lead-opinion": 1}).fillna(2)
+        pool = (pool.assign(_rank=rank).sort_values(["cluster_id", "_rank", "opinion_id"])
+                .drop_duplicates("cluster_id").drop(columns="_rank"))
+    sample = pool.sample(n=min(n, len(pool)), random_state=seed)[ID_COLS].copy()
     for col in tag_columns() + OUTCOME_COLS:
         sample[col] = ""
     out_path.parent.mkdir(parents=True, exist_ok=True)

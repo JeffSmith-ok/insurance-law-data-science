@@ -312,3 +312,20 @@ def test_collect_max_counts_only_new_opinions(tmp_path, capsys):
 ])
 def test_mold_variants(text):
     assert tag.tag_text(text)["clause_mold"] == 1
+
+
+def test_second_sample_skips_labeled_and_excluded_cases(tmp_path):
+    tagged = tmp_path / "tagged.csv"
+    rows = []
+    for cid, oid, typ in [(1, 11, "combined-opinion"), (2, 21, "lead-opinion"), (2, 22, "dissent"),
+                          (3, 31, "combined-opinion"), (4, 41, "combined-opinion")]:
+        rows.append({"opinion_id": oid, "cluster_id": cid, "opinion_type": typ, "case_name": "x",
+                     "url": "u", "court": "c", "date_filed": "2020-01-01", "query": "q"})
+    pd.DataFrame(rows).to_csv(tagged, index=False)
+    first = tmp_path / "sample.csv"
+    pd.DataFrame({"opinion_id": [11], "cluster_id": [1]}).to_csv(first, index=False)
+    excl = tmp_path / "excluded.csv"
+    pd.DataFrame({"cluster_id": [4], "case_name": ["y"], "reason": ["not coverage"]}).to_csv(excl, index=False)
+    df = evaluate.draw_sample(tagged, tmp_path / "sample2.csv", n=10, skip=[first],
+                              one_per_case=True, excluded_path=excl)
+    assert sorted(df["opinion_id"]) == [21, 31]  # case 1 labeled, case 4 excluded, case 2 -> lead only

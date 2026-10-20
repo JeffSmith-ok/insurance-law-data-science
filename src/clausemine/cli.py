@@ -40,6 +40,10 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--seed", type=int, default=42)
     s.add_argument("--out", type=Path, default=LABELS_PATH)
     s.add_argument("--force", action="store_true", help="overwrite an existing sheet")
+    s.add_argument("--skip", type=Path, nargs="+", default=[],
+                   help="earlier labeling sheets; their cases are left out of this sample")
+    s.add_argument("--one-per-case", action="store_true",
+                   help="at most one opinion per case (prefers the lead/combined opinion)")
 
     e = sub.add_parser("evaluate", help="tagger precision/recall vs. hand labels")
     e.add_argument("--labels", type=Path, default=LABELS_PATH)
@@ -71,7 +75,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Tagged {len(df)} opinions -> {args.out}")
     elif args.cmd == "sample":
         from .evaluate import draw_sample
-        df = draw_sample(TAGGED_PATH, args.out, n=args.n, seed=args.seed, force=args.force)
+        df = draw_sample(TAGGED_PATH, args.out, n=args.n, seed=args.seed, force=args.force,
+                         skip=args.skip, one_per_case=args.one_per_case)
         print(f"Wrote {len(df)} rows to {args.out}. Label blind, per CODEBOOK.md.")
     elif args.cmd == "evaluate":
         from .evaluate import evaluate
